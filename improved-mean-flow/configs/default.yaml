@@ -1,0 +1,31 @@
+seed: 42
+
+experiment:
+  name: "mnist_resnet18"
+  output_dir: "runs"     # 所有实验输出到 runs/<timestamp>_<name>/
+  log_every_n_steps: 50
+
+trainer:
+  max_epochs: 10
+  accelerator: "gpu"    # auto/cpu/gpu
+  devices: 1             # 1 或 2/4/8 (多卡时建议 strategy: ddp)
+  strategy: "auto"       # "ddp" / "auto"
+  precision: "16-mixed"  # "32" / "16-mixed" / "bf16-mixed"
+  accumulate_grad_batches: 1
+  gradient_clip_val: 0.0
+  deterministic: true
+  enable_checkpointing: true
+
+data:
+  target: "scripts.data.mnist.MNISTDataModule"
+  params:
+    batch_size: 128
+    num_workers: 4
+    data_dir: "data"
+
+model:
+  target: "scripts.models.resnet18.LitMNISTResNet18"
+  params:
+    lr: 0.001
+    weight_decay: 0.0001
+    #label_smoothing: 0.0
