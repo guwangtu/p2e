@@ -4,8 +4,8 @@ from typing import Any, Dict
 
 import torch
 
-from .base import BaseMetric
-from ..core.registry import REGISTRY
+from metrics.base import BaseMetric
+from core.registry import REGISTRY
 
 
 @REGISTRY.register_metric("fd_placeholder")

@@ -3,7 +3,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict
 
 try:
@@ -11,11 +13,17 @@ try:
 except ImportError as exc:  # pragma: no cover
     raise ImportError("PyYAML is required. Install with `pip install pyyaml`.") from exc
 
+# Ensure `p2e/evaluation` is importable as top-level modules (core/adapters/metrics/tasks).
+EVAL_ROOT = Path(__file__).resolve().parent
+if str(EVAL_ROOT) not in sys.path:
+    sys.path.insert(0, str(EVAL_ROOT))
+
 from core.runner import run_evaluation
 
 # Import plugins so decorators register them.
 from adapters.models import dummy_adapter  # noqa: F401
 from adapters.models import rddm_adapter  # noqa: F401
+from adapters.models import unet1d_adapter  # noqa: F401
 from adapters.data import bidmc_mock_adapter  # noqa: F401
 from metrics import fd_placeholder  # noqa: F401
 from metrics import rmse  # noqa: F401

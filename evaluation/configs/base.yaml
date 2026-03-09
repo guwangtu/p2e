@@ -1,0 +1,14 @@
+model:
+  name: dummy
+
+data:
+  name: bidmc_mock
+  batch_size: 4
+  num_batches: 2
+  min_len: 512
+  max_len: 640
+
+evaluation:
+  metrics: [rmse]
+  tasks: []
+  save_dir: p2e/evaluation/outputs

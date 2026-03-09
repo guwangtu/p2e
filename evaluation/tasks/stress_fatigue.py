@@ -4,8 +4,8 @@ from typing import Any, Dict
 
 import torch
 
-from .base import BaseTaskHead
-from ..core.registry import REGISTRY
+from tasks.base import BaseTaskHead
+from core.registry import REGISTRY
 
 
 @REGISTRY.register_task("stress_fatigue")

@@ -1,0 +1,20 @@
+model:
+  name: unet1d
+  in_ch: 1
+  out_ch: 1
+  base_ch: 16
+  depth: 3
+  # ckpt_path: ""
+  strict: false
+
+data:
+  name: bidmc_mock
+  batch_size: 4
+  num_batches: 3
+  min_len: 512
+  max_len: 768
+
+evaluation:
+  metrics: [rmse, fd_placeholder]
+  tasks: [bp_estimation, stress_fatigue]
+  save_dir: p2e/evaluation/outputs

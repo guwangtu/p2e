@@ -25,6 +25,15 @@ This folder provides a unified evaluation framework for PPG-to-ECG pipelines.
 python p2e/evaluation/run_eval.py --config p2e/evaluation/configs/base.yaml
 ```
 
+### UNet1D Smoke Test
+
+```bash
+python p2e/evaluation/run_eval.py --config p2e/evaluation/configs/unet1d_smoke.yaml --device cpu
+```
+
+`unet1d` adapter loads `p2e/scripts/models/unet1d.py::UNet1D`.
+If you have a trained checkpoint, set `model.ckpt_path` in the config.
+
 ## How To Extend
 
 1. Add a new adapter/head class implementing the corresponding base interface.
