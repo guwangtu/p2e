@@ -1,0 +1,62 @@
+seed: 42
+
+experiment:
+  name: "mimicbp_slvae"
+  output_dir: "runs"     # 所有实验输出到 runs/<timestamp>_<name>/
+  log_every_n_steps: 50
+
+trainer:
+  max_epochs: 300
+  accelerator: "gpu"     # auto/cpu/gpu
+  devices: 1             # 1 或 2/4/8 (多卡时建议 strategy: ddp)
+  strategy: "auto"       # "ddp" / "auto"
+  precision: "32"        # VAE 稳定性优先（避免 mixed precision NaN）
+  accumulate_grad_batches: 1
+  gradient_clip_val: 1.0
+  deterministic: true
+  enable_checkpointing: true
+
+data:
+  target: "scripts.data.mimicbp.MimicBPDataModule"
+  params:
+    batch_size: 16
+    num_workers: 4
+    data_dir: "E:\\datasets\\ppg2ecg\\MIMIC-BP"
+    train_split: "train_subjects.txt"
+    val_split: "val_subjects.txt"
+    test_split: "test_subjects.txt"
+    num_segments_per_patient: 30
+    fs: 125
+    return_dict: true
+
+model:
+  target: "scripts.models.slvae.LitSLVAE"
+  params:
+    # ---- data shape ----
+    in_ch: 1
+    out_ch: 1
+    seq_len: 3750
+
+    # ---- network ----
+    hidden_dim: 256
+    shared_dim: 64
+    private_dim: 32
+
+    # ---- optim ----
+    lr: 0.0003
+    weight_decay: 0.00001
+
+    # ---- loss weights ----
+    beta_shared: 0.001
+    beta_private: 0.001
+    lambda_self_recon: 1.0
+    lambda_cross_recon: 1.0
+    lambda_align: 1.0
+
+    # ---- recon loss ----
+    recon_loss: "l1"             # "l1" | "mse" | "smooth_l1"
+
+    # ---- behavior ----
+    zero_private_for_cross: true
+    log_latent_stats: false
+
