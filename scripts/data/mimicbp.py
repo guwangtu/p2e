@@ -268,11 +268,10 @@ class MimicBPDataset(Dataset):
 
         if self.transform:
             x = self.transform(x)
-
         if self.return_dict:
             return {
-                "x": x,
-                "y": y,
+                "ppg": x,
+                "ecg": y,
                 "meta": {"pid": pid, "segment_idx": idx, "fs": self.fs},
             }
         else:

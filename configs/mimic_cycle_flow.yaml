@@ -1,0 +1,80 @@
+seed: 42
+
+experiment:
+  name: "mimicbp_cycle_flow"
+  output_dir: "runs"
+  log_every_n_steps: 50
+
+trainer:
+  max_epochs: 200
+  accelerator: "gpu"
+  devices: 1
+  strategy: "auto"
+  precision: "32"              # flow matching stability
+  accumulate_grad_batches: 2   # effective batch = 2 * 8 = 16 windows
+  gradient_clip_val: 1.0
+  deterministic: true
+  enable_checkpointing: true
+
+data:
+  target: "scripts.data.mimicbp_v2.MimicBPCycleDataModule"
+  params:
+    data_dir: "E:\\datasets\\ppg2ecg\\MIMIC-BP"
+    train_split: "train_subjects.txt"
+    val_split: "val_subjects.txt"
+    test_split: "test_subjects.txt"
+    # cycle params
+    window_size: 32
+    cycle_len: 256
+    overlap_len: 32
+    stride: 16                 # training overlap stride
+    fs: 125
+    # preprocessing
+    preprocessed: false         # set false for first run to auto-preprocess
+    ecg_bandpass: [0.5, 40.0]
+    ppg_bandpass: [0.5, 8.0]
+    powerline_freq: 50.0
+    # loader
+    batch_size: 8
+    num_workers: 4
+    pin_memory: true
+    drop_last: true
+
+model:
+  target: "scripts.models.cycle_flow.LitCycleFlow"
+  params:
+    # PPG Encoder
+    enc_base_ch: 32
+    enc_depth: 4
+    feat_dim: 128
+    # Time2Vec
+    time_dim: 32
+    # Dual-SSM
+    global_hidden: 256
+    local_hidden: 128
+    global_out: 128
+    local_out: 64
+    overlap_dim: 32
+    use_mamba: false            # set true if mamba_ssm is installed
+    # Flow Matching
+    flow_hidden: 256
+    flow_layers: 4
+    flow_heads: 4
+    latent_dim: 128
+    # ECG Decoder
+    dec_hidden: 256
+    cycle_len: 256
+    overlap_len: 32
+    # Keypoint Head
+    kp_hidden: 128
+    # Loss weights
+    lambda_recon: 1.0
+    lambda_cfm: 1.0
+    lambda_morph: 0.1
+    lambda_align: 0.01
+    # Optimizer
+    lr: 0.0001
+    weight_decay: 0.00001
+    warmup_steps: 1000
+    # Inference
+    n_sample_steps: 20

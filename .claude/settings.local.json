@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs grep:*)",
+      "Bash(python -c \"from scripts.models.cycle_flow import LitCycleFlow; print\\(''Model import OK''\\); m = LitCycleFlow\\(\\); print\\(f''Param count: {sum\\(p.numel\\(\\) for p in m.parameters\\(\\)\\):,}''\\)\")",
+      "Bash(where conda:*)",
+      "Bash(where python:*)",
+      "Bash(conda run:*)",
+      "Bash(CUBLAS_WORKSPACE_CONFIG=:4096:8 conda run -n p2e python test_cycle_flow.py)",
+      "Bash(python -c \"from scripts.models.cardio_world_model import LitCardioWorldModel; print\\(''Import OK''\\); m = LitCardioWorldModel\\(\\); print\\(f''Params: {sum\\(p.numel\\(\\) for p in m.parameters\\(\\)\\):,}''\\)\")"
+    ]
+  }
+}

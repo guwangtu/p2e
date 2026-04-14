@@ -1,0 +1,88 @@
+seed: 42
+
+experiment:
+  name: "mimicbp_cardio_wm"
+  output_dir: "runs"
+  log_every_n_steps: 50
+
+trainer:
+  max_epochs: 200
+  accelerator: "gpu"
+  devices: 1
+  strategy: "auto"
+  precision: "32"
+  accumulate_grad_batches: 2   # effective batch = 2 * 8 = 16 windows
+  gradient_clip_val: 1.0
+  deterministic: true
+  enable_checkpointing: true
+
+data:
+  target: "scripts.data.mimicbp_v2.MimicBPCycleDataModule"
+  params:
+    data_dir: "E:\\datasets\\ppg2ecg\\MIMIC-BP"
+    train_split: "train_subjects.txt"
+    val_split: "val_subjects.txt"
+    test_split: "test_subjects.txt"
+    # cycle params
+    window_size: 32
+    cycle_len: 256
+    overlap_len: 32
+    stride: 16
+    fs: 125
+    # preprocessing
+    preprocessed: false
+    ecg_bandpass: [0.5, 40.0]
+    ppg_bandpass: [0.5, 8.0]
+    powerline_freq: 50.0
+    # loader
+    batch_size: 8
+    num_workers: 4
+    pin_memory: true
+    drop_last: true
+
+model:
+  target: "scripts.models.cardio_world_model.LitCardioWorldModel"
+  params:
+    # PPG Encoder (action)
+    enc_base_ch: 32
+    enc_depth: 4
+    feat_dim: 128
+    # ECG Encoder (observation)
+    obs_base_ch: 32
+    obs_depth: 4
+    obs_dim: 128
+    # Time2Vec
+    time_dim: 32
+    # RSSM
+    h_dim: 256
+    z_dim: 64
+    overlap_dim: 32
+    prior_hidden: 200
+    posterior_hidden: 200
+    # Flow Matching Decoder
+    flow_latent_dim: 128
+    flow_hidden: 256
+    flow_layers: 4
+    flow_heads: 4
+    # ECG Decoder (waveform)
+    dec_hidden: 256
+    cycle_len: 256
+    overlap_len: 32
+    # Keypoint Head
+    kp_hidden: 128
+    # Loss weights
+    lambda_recon: 1.0
+    lambda_cfm: 1.0
+    lambda_kl: 0.1              # KL(posterior || prior) — core world model loss
+    lambda_morph: 0.1
+    lambda_rr: 0.05             # RR prediction reward
+    lambda_align: 0.01
+    # KL balancing (Dreamer-v2 style)
+    kl_balance: 0.8             # 80% gradient to posterior, 20% to prior
+    free_nats: 1.0              # don't optimize KL below this threshold
+    # Optimizer
+    lr: 0.0001
+    weight_decay: 0.00001
+    warmup_steps: 1000
+    # Inference
+    n_sample_steps: 20
