@@ -1,0 +1,31 @@
+# Evaluate UNet1D on real MIMIC test set
+model:
+  name: unet1d
+  in_ch: 1
+  out_ch: 1
+  base_ch: 32
+  depth: 4
+  ckpt_path: ""  # set to your UNet1D checkpoint
+
+data:
+  name: mimic
+  data_dir: "E:\\datasets\\ppg2ecg\\MIMIC-BP"
+  split: "test_subjects.txt"
+  batch_size: 8
+  num_segments_per_patient: 30
+  fs: 125
+  max_samples: 0  # 0 = all
+
+evaluation:
+  metrics: [mae, rmse, pearson, dtw, rpeak_error, nfe]
+  tasks: []
+  save_dir: "evaluation/outputs"
+
+metric_params:
+  dtw:
+    max_len: 2048
+  rpeak_error:
+    fs: 125
+    tolerance_ms: 150
+  nfe:
+    nfe: 1  # UNet1D = single forward pass

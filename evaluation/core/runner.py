@@ -38,10 +38,32 @@ def _instantiate_plugins(config: Dict[str, Any], runtime: Dict[str, Any]):
     return model, data, metric_names, metrics, task_names, tasks
 
 
-def _concat_batches(items: List[torch.Tensor]) -> torch.Tensor:
+def _pad_and_concat(items: List[torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Pad variable-length tensors to the same length and concatenate, returning a mask."""
     if not items:
         raise ValueError("No tensors to concatenate.")
-    return torch.cat(items, dim=0)
+
+    # Check if all have the same last-dim size
+    shapes = set(t.shape[1:] for t in items)
+    if len(shapes) == 1:
+        return torch.cat(items, dim=0), None  # no padding needed
+
+    # Variable lengths: pad to max length in the last dimension
+    max_len = max(t.shape[-1] for t in items)
+    padded, masks = [], []
+    for t in items:
+        L = t.shape[-1]
+        if L < max_len:
+            pad_size = max_len - L
+            t_padded = torch.nn.functional.pad(t, (0, pad_size))
+            m = torch.zeros(*t.shape[:-1], max_len, dtype=torch.bool)
+            m[..., :L] = True
+        else:
+            t_padded = t
+            m = torch.ones(*t.shape[:-1], max_len, dtype=torch.bool)
+        padded.append(t_padded)
+        masks.append(m)
+    return torch.cat(padded, dim=0), torch.cat(masks, dim=0)
 
 
 def run_evaluation(config: Dict[str, Any], runtime: Dict[str, Any]) -> EvalResult:
@@ -53,6 +75,7 @@ def run_evaluation(config: Dict[str, Any], runtime: Dict[str, Any]) -> EvalResul
     pred_batches: List[torch.Tensor] = []
     mask_batches: List[torch.Tensor] = []
     labels_store: Dict[str, List[torch.Tensor]] = defaultdict(list)
+    aux_store: Dict[str, Any] = {}
     seen_samples = 0
 
     for batch in dataloader:
@@ -66,33 +89,59 @@ def run_evaluation(config: Dict[str, Any], runtime: Dict[str, Any]) -> EvalResul
         pred_batches.append(pred.ecg_pred.detach().cpu())
         if batch.mask is not None:
             mask_batches.append(batch.mask.detach().cpu())
-        else:
-            default_mask = torch.ones_like(batch.ecg, dtype=torch.bool).cpu()
-            mask_batches.append(default_mask)
 
         if batch.labels:
             for key, value in batch.labels.items():
-                labels_store[key].append(value.detach().cpu())
+                if isinstance(value, torch.Tensor):
+                    labels_store[key].append(value.detach().cpu())
+
+        # Collect aux (e.g., nfe) from first batch
+        if pred.aux and not aux_store:
+            aux_store = pred.aux
 
         seen_samples += int(batch.ecg.shape[0])
 
-    ecg_true = _concat_batches(true_batches)
-    ecg_pred = _concat_batches(pred_batches)
-    mask = _concat_batches(mask_batches)
+    # Pad and concat (handles variable-length batches)
+    ecg_true, pad_mask_true = _pad_and_concat(true_batches)
+    ecg_pred, pad_mask_pred = _pad_and_concat(pred_batches)
+
+    # Combine masks: user-provided mask AND padding mask
+    if mask_batches:
+        user_mask, _ = _pad_and_concat(mask_batches)
+    else:
+        user_mask = None
+
+    if pad_mask_true is not None:
+        mask = pad_mask_true
+        if user_mask is not None:
+            mask = mask & user_mask
+    elif user_mask is not None:
+        mask = user_mask
+    else:
+        mask = torch.ones_like(ecg_true, dtype=torch.bool)
 
     labels = None
     if labels_store:
-        labels = {k: _concat_batches(v) for k, v in labels_store.items()}
+        labels = {}
+        for k, v in labels_store.items():
+            try:
+                labels[k] = torch.cat(v, dim=0)
+            except RuntimeError:
+                # Skip labels that can't be concatenated (different shapes)
+                pass
+
+    # Build meta dict for metrics (pass aux info like nfe)
+    eval_meta = dict(aux_store)
 
     metric_results: Dict[str, float] = {}
     for name, metric_obj in zip(metric_names, metrics):
-        out = metric_obj.compute(ecg_true=ecg_true, ecg_pred=ecg_pred, mask=mask, meta={})
+        out = metric_obj.compute(ecg_true=ecg_true, ecg_pred=ecg_pred, mask=mask, meta=eval_meta)
         for key, value in out.items():
             metric_results[f"{name}.{key}"] = float(value)
 
     task_results: Dict[str, Dict[str, float]] = {}
     for name, task_obj in zip(task_names, tasks):
-        out = task_obj.evaluate(ecg_true=ecg_true, ecg_pred=ecg_pred, labels=labels, mask=mask, meta={})
+        out = task_obj.evaluate(ecg_true=ecg_true, ecg_pred=ecg_pred, labels=labels, mask=mask, meta=eval_meta)
         task_results[name] = {k: float(v) for k, v in out.items()}
 
     summary = {

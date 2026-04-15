@@ -1,0 +1,60 @@
+{
+  "config": {
+    "model": {
+      "name": "dummy"
+    },
+    "data": {
+      "name": "bidmc_mock",
+      "batch_size": 4,
+      "num_batches": 2,
+      "min_len": 512,
+      "max_len": 640
+    },
+    "evaluation": {
+      "metrics": [
+        "mae",
+        "rmse",
+        "pearson",
+        "dtw",
+        "rpeak_error",
+        "nfe"
+      ],
+      "tasks": [],
+      "save_dir": "evaluation/outputs"
+    },
+    "metric_params": {
+      "dtw": {
+        "max_len": 512
+      },
+      "rpeak_error": {
+        "fs": 125,
+        "tolerance_ms": 150
+      },
+      "nfe": {
+        "nfe": 1
+      }
+    }
+  },
+  "runtime": {
+    "device": "cpu",
+    "seed": 42
+  },
+  "summary": {
+    "num_samples": 8,
+    "num_timesteps": 4551,
+    "model": "dummy",
+    "data": "bidmc_mock"
+  },
+  "metrics": {
+    "mae.mae": 0.07615436613559723,
+    "rmse.rmse": 0.09224842488765717,
+    "pearson.pearson": 0.9915244206786156,
+    "dtw.dtw": 18.157861868094187,
+    "rpeak_error.rpeak_error_ms": 45.333333333333336,
+    "rpeak_error.rpeak_precision": 0.8048780487804879,
+    "rpeak_error.rpeak_recall": 0.7674418604651163,
+    "rpeak_error.rpeak_f1": 0.7857142857142858,
+    "nfe.nfe": 1.0
+  },
+  "tasks": {}
+}

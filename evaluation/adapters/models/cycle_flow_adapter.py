@@ -69,4 +69,7 @@ class CycleFlowAdapter(BaseModelAdapter):
                 results.append(ecg_pred)
             ecg_pred = torch.stack(results, dim=0)  # (B, total_L)
 
-        return EvalPrediction(ecg_pred=ecg_pred.detach().cpu())
+        return EvalPrediction(
+            ecg_pred=ecg_pred.detach().cpu(),
+            aux={"nfe": n_steps},
+        )

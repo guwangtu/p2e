@@ -1,0 +1,30 @@
+# Evaluate CycleFlow on real MIMIC test set (cycle-level)
+model:
+  name: cycle_flow
+  ckpt_path: ""  # set to your CycleFlow checkpoint
+  n_sample_steps: 20
+
+data:
+  name: mimic_cycle
+  data_dir: "E:\\datasets\\ppg2ecg\\MIMIC-BP"
+  split: "test_subjects.txt"
+  batch_size: 4
+  window_size: 32
+  cycle_len: 256
+  overlap_len: 32
+  fs: 125
+  max_samples: 0  # 0 = all
+
+evaluation:
+  metrics: [mae, rmse, pearson, dtw, rpeak_error, nfe]
+  tasks: []
+  save_dir: "evaluation/outputs"
+
+metric_params:
+  dtw:
+    max_len: 2048
+  rpeak_error:
+    fs: 125
+    tolerance_ms: 150
+  nfe:
+    nfe: 20  # fallback if not passed from model adapter
