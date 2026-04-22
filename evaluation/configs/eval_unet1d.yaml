@@ -1,0 +1,30 @@
+model:
+  name: unet1d
+  in_ch: 1
+  out_ch: 1
+  base_ch: 32
+  depth: 4
+  ckpt_path: "/root/autodl-tmp/alice/p2e/runs/20260416_012125_mimicbp_unet1d/checkpoints/epoch=005-val_loss=0.000000.ckpt"
+
+data:
+  name: mimic
+  data_dir: "/root/autodl-tmp/alice/mimicbp"
+  split: "test_subjects.txt"
+  batch_size: 16
+  num_segments_per_patient: 30
+  fs: 125
+  max_samples: 0
+
+evaluation:
+  metrics: [mae, rmse, pearson, dtw, rpeak_error, nfe]
+  tasks: []
+  save_dir: "evaluation/outputs"
+
+metric_params:
+  dtw:
+    max_len: 2048
+  rpeak_error:
+    fs: 125
+    tolerance_ms: 150
+  nfe:
+    nfe: 1

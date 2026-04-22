@@ -1,0 +1,29 @@
+model:
+  name: cycle_flow
+  ckpt_path: "/root/autodl-tmp/alice/p2e/runs/20260418_010452_mimicbp_cycle_flow/checkpoints/epoch=050-val_loss=0.000000.ckpt"
+  n_sample_steps: 20
+
+data:
+  name: mimic_cycle
+  data_dir: "/root/autodl-tmp/alice/mimicbp"
+  split: "test_subjects.txt"
+  batch_size: 4
+  window_size: 32
+  cycle_len: 256
+  overlap_len: 32
+  fs: 125
+  max_samples: 0
+
+evaluation:
+  metrics: [mae, rmse, pearson, dtw, rpeak_error, nfe]
+  tasks: []
+  save_dir: "evaluation/outputs"
+
+metric_params:
+  dtw:
+    max_len: 2048
+  rpeak_error:
+    fs: 125
+    tolerance_ms: 150
+  nfe:
+    nfe: 20

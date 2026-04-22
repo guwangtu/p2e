@@ -198,8 +198,8 @@ class LitUNet1D(L.LightningModule):
         Support dict batch (recommended) or tuple batch.
         """
         if isinstance(batch, dict):
-            x = batch["x"]
-            y = batch["y"]
+            x = batch.get("x", batch.get("ppg"))
+            y = batch.get("y", batch.get("ecg"))
             return x, y
         if isinstance(batch, (list, tuple)) and len(batch) >= 2:
             return batch[0], batch[1]
@@ -213,18 +213,18 @@ class LitUNet1D(L.LightningModule):
 
     def training_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
         loss = self._shared_step(batch)
-        batch_size = batch["x"].shape[0] if isinstance(batch, dict) else batch[0].shape[0]
+        batch_size = batch.get("x", batch.get("ppg")).shape[0] if isinstance(batch, dict) else batch[0].shape[0]
         self.log("train/loss", loss, on_step=True,batch_size=batch_size, on_epoch=True, prog_bar=True)
         return loss
 
     def validation_step(self, batch: Any, batch_idx: int):
         loss = self._shared_step(batch)
-        batch_size = batch["x"].shape[0] if isinstance(batch, dict) else batch[0].shape[0]
+        batch_size = batch.get("x", batch.get("ppg")).shape[0] if isinstance(batch, dict) else batch[0].shape[0]
         self.log("val/loss", loss, on_step=False, on_epoch=True,batch_size=batch_size, prog_bar=True, sync_dist=True)
 
     def test_step(self, batch: Any, batch_idx: int):
         loss = self._shared_step(batch)
-        batch_size = batch["x"].shape[0] if isinstance(batch, dict) else batch[0].shape[0]
+        batch_size = batch.get("x", batch.get("ppg")).shape[0] if isinstance(batch, dict) else batch[0].shape[0]
         self.log("test/loss", loss, on_step=False, on_epoch=True,batch_size=batch_size, prog_bar=True, sync_dist=True)
 
     def configure_optimizers(self):

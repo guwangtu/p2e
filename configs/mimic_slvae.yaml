@@ -21,7 +21,7 @@ data:
   params:
     batch_size: 16
     num_workers: 4
-    data_dir: "E:\\datasets\\ppg2ecg\\MIMIC-BP"
+    data_dir: "/root/autodl-tmp/alice/mimicbp"
     train_split: "train_subjects.txt"
     val_split: "val_subjects.txt"
     test_split: "test_subjects.txt"

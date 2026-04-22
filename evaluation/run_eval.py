@@ -25,6 +25,7 @@ from adapters.models import dummy_adapter  # noqa: F401
 from adapters.models import rddm_adapter  # noqa: F401
 from adapters.models import unet1d_adapter  # noqa: F401
 from adapters.models import cycle_flow_adapter  # noqa: F401
+from adapters.models import cardio_wm_adapter  # noqa: F401
 from adapters.data import bidmc_mock_adapter  # noqa: F401
 from adapters.data import mimic_adapter  # noqa: F401
 from metrics import fd_placeholder  # noqa: F401

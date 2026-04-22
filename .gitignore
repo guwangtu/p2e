@@ -79,8 +79,30 @@ target/
 .ipynb_checkpoints
 *.ipynb
 
-# runs
+# runs (training checkpoints, tensorboard logs)
 runs/
+
+# Paper (LaTeX source, compiled PDFs, submission zips)
+paper/
+paper_submit/
+paper_submit.zip
+
+# Visualization outputs
+show/
+
+# Evaluation outputs
+evaluation/outputs/
+evaluation/evaluation/
+unified_eval_results*.json
+
+# Standalone scripts (not part of core project)
+show_pipeline.py
+show_pipeline_5s.py
+unified_eval.py
+run_ablations.py
+
+# Neurips template clone
+neurips_template/
 
 # IPython
 profile_default/

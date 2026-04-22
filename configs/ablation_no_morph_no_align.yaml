@@ -1,12 +1,12 @@
 seed: 42
 
 experiment:
-  name: "mimicbp_cardio_wm"
+  name: "ablation_no_morph_no_align"
   output_dir: "runs"
   log_every_n_steps: 50
 
 trainer:
-  max_epochs: 200
+  max_epochs: 100
   accelerator: "gpu"
   devices: 1
   strategy: "auto"
@@ -23,66 +23,43 @@ data:
     train_split: "train_subjects.txt"
     val_split: "val_subjects.txt"
     test_split: "test_subjects.txt"
-    # cycle params
     window_size: 32
     cycle_len: 256
     overlap_len: 32
     stride: 16
     fs: 125
-    # preprocessing
-    preprocessed: false
-    ecg_bandpass: [0.5, 40.0]
-    ppg_bandpass: [0.5, 8.0]
-    powerline_freq: 50.0
-    # loader
+    preprocessed: true
     batch_size: 64
     num_workers: 4
     pin_memory: true
     drop_last: true
 
 model:
-  target: "scripts.models.cardio_world_model.LitCardioWorldModel"
+  target: "scripts.models.cycle_flow.LitCycleFlow"
   params:
-    # PPG Encoder (action)
     enc_base_ch: 32
     enc_depth: 4
     feat_dim: 128
-    # ECG Encoder (observation)
-    obs_base_ch: 32
-    obs_depth: 4
-    obs_dim: 128
-    # Time2Vec
     time_dim: 32
-    # RSSM
-    h_dim: 256
-    z_dim: 64
+    global_hidden: 256
+    local_hidden: 128
+    global_out: 128
+    local_out: 64
     overlap_dim: 32
-    prior_hidden: 200
-    posterior_hidden: 200
-    # Flow Matching Decoder
-    flow_latent_dim: 128
+    use_mamba: false
     flow_hidden: 256
     flow_layers: 4
     flow_heads: 4
-    # ECG Decoder (waveform)
+    latent_dim: 128
     dec_hidden: 256
     cycle_len: 256
     overlap_len: 32
-    # Keypoint Head
     kp_hidden: 128
-    # Loss weights
     lambda_recon: 1.0
     lambda_cfm: 1.0
-    lambda_kl: 0.1              # KL(posterior || prior) — core world model loss
-    lambda_morph: 0.1
-    lambda_rr: 0.05             # RR prediction reward
-    lambda_align: 0.01
-    # KL balancing (Dreamer-v2 style)
-    kl_balance: 0.8             # 80% gradient to posterior, 20% to prior
-    free_nats: 1.0              # don't optimize KL below this threshold
-    # Optimizer
+    lambda_morph: 0.0
+    lambda_align: 0.0
     lr: 0.0001
     weight_decay: 0.00001
     warmup_steps: 1000
-    # Inference
     n_sample_steps: 20

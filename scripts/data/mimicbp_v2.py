@@ -129,6 +129,294 @@ def delineate_ecg(ecg_cycle: np.ndarray, fs: int) -> np.ndarray:
     return result
 
 
+def detect_ppg_peaks(ppg: np.ndarray, fs: int, ptt_compensation_ms: float = 0.0) -> np.ndarray:
+    """
+    Detect systolic peaks in a PPG signal.
+    PPG peaks correspond to ECG R-peaks with a fixed delay (pulse transit time).
+
+    Args:
+        ppg: PPG signal (T,)
+        fs: sampling rate
+        ptt_compensation_ms: shift peaks backward by this many ms to approximate
+            ECG R-peak timing. Typical PTT is 200-300ms.
+
+    Returns array of peak sample indices (compensated for PTT if requested).
+    """
+    try:
+        import neurokit2 as nk
+        _, info = nk.ppg_peaks(ppg, sampling_rate=fs)
+        peaks = np.array(info["PPG_Peaks"], dtype=np.int64)
+    except (ImportError, Exception):
+        from scipy.signal import find_peaks
+        min_distance = int(0.4 * fs)  # min RR = 0.4s (~150 bpm)
+        peaks, _ = find_peaks(ppg, distance=min_distance, prominence=np.std(ppg) * 0.3)
+        peaks = np.array(peaks, dtype=np.int64)
+
+    # Compensate for pulse transit time: shift peaks backward
+    if ptt_compensation_ms > 0 and len(peaks) > 0:
+        shift = int(ptt_compensation_ms * fs / 1000)
+        peaks = np.maximum(peaks - shift, 0)
+
+    return peaks
+
+
+def segment_ppg_cycles(
+    ppg: np.ndarray,
+    fs: int,
+    cycle_len: int = 256,
+    rr_min: float = 0.4,
+    rr_max: float = 1.5,
+    ptt_compensation_ms: float = 0.0,
+) -> Optional[Dict[str, np.ndarray]]:
+    """
+    Segment PPG signal into heartbeat cycles using PPG peak detection (no ECG needed).
+
+    Args:
+        ppg: PPG signal, shape (T,)
+        fs: sampling rate
+        cycle_len: resample each cycle to this length
+        rr_min/rr_max: valid RR interval range in seconds
+        ptt_compensation_ms: pulse transit time compensation in ms
+
+    Returns:
+        dict with keys: ppg_cycles, rr_intervals, original_lengths, cycle_starts
+        or None if too few valid cycles.
+    """
+    from scipy.interpolate import CubicSpline
+
+    peaks = detect_ppg_peaks(ppg, fs, ptt_compensation_ms=ptt_compensation_ms)
+    if len(peaks) < 3:
+        return None
+
+    ppg_cycles = []
+    rr_intervals = []
+    original_lengths = []
+    cycle_starts = []  # start sample index in original signal
+
+    for i in range(1, len(peaks) - 1):
+        rr_prev = (peaks[i] - peaks[i - 1]) / fs
+        rr_next = (peaks[i + 1] - peaks[i]) / fs
+        rr = rr_next
+
+        if not (rr_min <= rr <= rr_max) or not (rr_min <= rr_prev <= rr_max):
+            continue
+
+        # Cycle boundaries: 30% before peak, 70% after peak
+        rr_samples = peaks[i + 1] - peaks[i]
+        start = peaks[i] - int(0.3 * rr_samples)
+        end = peaks[i] + int(0.7 * rr_samples)
+
+        if start < 0 or end > len(ppg):
+            continue
+
+        ppg_seg = ppg[start:end]
+        orig_len = len(ppg_seg)
+
+        if orig_len < 10:
+            continue
+
+        t_orig = np.linspace(0, 1, orig_len)
+        t_new = np.linspace(0, 1, cycle_len)
+        ppg_resampled = CubicSpline(t_orig, ppg_seg)(t_new).astype(np.float32)
+
+        ppg_cycles.append(ppg_resampled)
+        rr_intervals.append(rr)
+        original_lengths.append(orig_len)
+        cycle_starts.append(start)
+
+    if len(ppg_cycles) < 3:
+        return None
+
+    return {
+        "ppg_cycles": np.stack(ppg_cycles),
+        "rr_intervals": np.array(rr_intervals, dtype=np.float32),
+        "original_lengths": np.array(original_lengths, dtype=np.int32),
+        "cycle_starts": np.array(cycle_starts, dtype=np.int32),
+    }
+
+
+def preprocess_ppg_for_inference(
+    ppg: np.ndarray,
+    fs: int = 125,
+    cycle_len: int = 256,
+    window_size: int = 32,
+    overlap_len: int = 32,
+    ppg_bandpass: Tuple[float, float] = (0.5, 8.0),
+    powerline_freq: float = 50.0,
+    ptt_compensation_ms: float = 250.0,
+) -> Optional[Dict[str, Any]]:
+    """
+    Preprocess a raw PPG signal for inference with CycleFlow or CardioWorldModel.
+    No ECG required — uses PPG peak detection for cycle segmentation.
+
+    Args:
+        ppg: raw PPG signal, shape (T,), e.g. (3750,) for 30s @ 125Hz
+        fs: sampling rate in Hz
+        cycle_len: resample each cycle to this length
+        window_size: number of consecutive cycles per model input window
+        overlap_len: overlap length for ECG decoder conditioning
+        ppg_bandpass: bandpass filter range for PPG
+        powerline_freq: notch filter frequency
+        ptt_compensation_ms: pulse transit time compensation (ms).
+            PPG peaks are delayed ~200-300ms from ECG R-peaks.
+            Set to 0 to disable.
+
+    Returns:
+        dict ready for model.generate() / model.imagine() + reconstruction info:
+        {
+            "ppg_cycles":      Tensor (n_windows, W, cycle_len),
+            "rr_intervals":    Tensor (n_windows, W),
+            "n_cycles":        int,
+            "n_windows":       int,
+            "original_lengths": ndarray (N,) — original sample count per cycle
+            "cycle_starts":    ndarray (N,) — start index in filtered signal
+            "signal_length":   int — length of the original signal
+        }
+        or None if extraction fails.
+    """
+    import torch
+
+    signal_length = len(ppg)
+
+    # 1. Filter
+    ppg = ppg.astype(np.float64)
+    ppg = bandpass_filter(ppg, *ppg_bandpass, fs)
+    ppg = notch_filter(ppg, powerline_freq, fs)
+
+    # 2. Normalize
+    ppg = (ppg - ppg.mean()) / (ppg.std() + 1e-8)
+
+    # 3. Segment into cycles using PPG peaks with PTT compensation
+    result = segment_ppg_cycles(ppg, fs, cycle_len,
+                                ptt_compensation_ms=ptt_compensation_ms)
+    if result is None:
+        return None
+
+    ppg_cycles = result["ppg_cycles"]           # (N, cycle_len)
+    rr_intervals = result["rr_intervals"]       # (N,)
+    original_lengths = result["original_lengths"]  # (N,)
+    cycle_starts = result["cycle_starts"]        # (N,)
+    n_cycles = len(ppg_cycles)
+
+    if n_cycles < window_size:
+        pad_n = window_size - n_cycles
+        ppg_cycles = np.concatenate([
+            ppg_cycles,
+            np.tile(ppg_cycles[-1:], (pad_n, 1)),
+        ], axis=0)
+        rr_intervals = np.concatenate([
+            rr_intervals,
+            np.tile(rr_intervals[-1:], pad_n),
+        ], axis=0)
+        original_lengths = np.concatenate([
+            original_lengths,
+            np.tile(original_lengths[-1:], pad_n),
+        ], axis=0)
+        cycle_starts = np.concatenate([
+            cycle_starts,
+            np.tile(cycle_starts[-1:], pad_n),
+        ], axis=0)
+
+    # 4. Build windows
+    n_windows = max(1, (len(ppg_cycles) - window_size) // window_size + 1)
+    windows_ppg, windows_rr = [], []
+    windows_orig_len, windows_starts = [], []
+    for i in range(n_windows):
+        start = i * window_size
+        end = start + window_size
+        if end > len(ppg_cycles):
+            start = len(ppg_cycles) - window_size
+            end = len(ppg_cycles)
+        windows_ppg.append(ppg_cycles[start:end])
+        windows_rr.append(rr_intervals[start:end])
+        windows_orig_len.append(original_lengths[start:end])
+        windows_starts.append(cycle_starts[start:end])
+
+    return {
+        "ppg_cycles": torch.from_numpy(np.stack(windows_ppg)).float(),
+        "rr_intervals": torch.from_numpy(np.stack(windows_rr)).float(),
+        "n_cycles": n_cycles,
+        "n_windows": n_windows,
+        "original_lengths": np.stack(windows_orig_len),   # (n_windows, W)
+        "cycle_starts": np.stack(windows_starts),          # (n_windows, W)
+        "signal_length": signal_length,
+    }
+
+
+def reconstruct_ecg_from_cycles(
+    ecg_cycles: np.ndarray,
+    original_lengths: np.ndarray,
+    cycle_starts: np.ndarray,
+    signal_length: int,
+    cycle_len: int = 256,
+    n_actual_cycles: int = None,
+) -> np.ndarray:
+    """
+    Reconstruct a full-length ECG signal from generated cycles by placing
+    each cycle back at its original position with proper resampling.
+
+    This avoids the naive concatenation + interpolation approach that
+    destroys temporal alignment.
+
+    Args:
+        ecg_cycles: (W*L,) or (W, L) — generated ECG cycles
+        original_lengths: (W,) — original sample count for each cycle
+        cycle_starts: (W,) — start index in original signal for each cycle
+        signal_length: total length of the output signal
+        cycle_len: resampled cycle length (256)
+        n_actual_cycles: if padding was used, only use first n cycles
+
+    Returns:
+        ecg_out: (signal_length,) — reconstructed ECG signal
+    """
+    from scipy.interpolate import CubicSpline
+
+    if ecg_cycles.ndim == 1:
+        W = len(original_lengths)
+        ecg_cycles = ecg_cycles[:W * cycle_len].reshape(W, cycle_len)
+
+    W = len(ecg_cycles)
+    if n_actual_cycles is not None:
+        W = min(W, n_actual_cycles)
+
+    ecg_out = np.zeros(signal_length, dtype=np.float32)
+    weight = np.zeros(signal_length, dtype=np.float32)
+
+    for i in range(W):
+        orig_len = int(original_lengths[i])
+        start = int(cycle_starts[i])
+        end = start + orig_len
+
+        if end > signal_length:
+            end = signal_length
+            orig_len = end - start
+
+        if orig_len < 2:
+            continue
+
+        # Resample from cycle_len back to original length
+        t_cycle = np.linspace(0, 1, cycle_len)
+        t_orig = np.linspace(0, 1, orig_len)
+        ecg_resampled = CubicSpline(t_cycle, ecg_cycles[i])(t_orig).astype(np.float32)
+
+        # Overlap-add with triangular window for smooth blending
+        win = np.ones(orig_len, dtype=np.float32)
+        # Taper edges for smooth blending at overlapping boundaries
+        taper = min(orig_len // 4, 10)
+        if taper > 0:
+            win[:taper] = np.linspace(0, 1, taper)
+            win[-taper:] = np.linspace(1, 0, taper)
+
+        ecg_out[start:end] += ecg_resampled * win
+        weight[start:end] += win
+
+    # Normalize by overlap count
+    mask = weight > 0
+    ecg_out[mask] /= weight[mask]
+
+    return ecg_out
+
+
 def segment_cycles(
     ppg: np.ndarray,
     ecg: np.ndarray,
@@ -136,6 +424,8 @@ def segment_cycles(
     cycle_len: int = 256,
     rr_min: float = 0.4,
     rr_max: float = 1.5,
+    use_ppg_peaks: bool = False,
+    ptt_compensation_ms: float = 250.0,
 ) -> Optional[Dict[str, np.ndarray]]:
     """
     Segment synchronized PPG/ECG signals into heartbeat cycles.
@@ -146,6 +436,9 @@ def segment_cycles(
         fs: sampling rate
         cycle_len: resample each cycle to this length
         rr_min/rr_max: valid RR interval range in seconds
+        use_ppg_peaks: if True, use PPG peaks (with PTT compensation) instead of ECG R-peaks.
+            This ensures training and inference use the same segmentation strategy.
+        ptt_compensation_ms: PTT compensation when using PPG peaks (default 250ms).
 
     Returns:
         dict with keys: ppg_cycles, ecg_cycles, rr_intervals, keypoints, original_lengths
@@ -153,7 +446,10 @@ def segment_cycles(
     """
     from scipy.interpolate import CubicSpline
 
-    r_peaks = detect_r_peaks(ecg, fs)
+    if use_ppg_peaks:
+        r_peaks = detect_ppg_peaks(ppg, fs, ptt_compensation_ms=ptt_compensation_ms)
+    else:
+        r_peaks = detect_r_peaks(ecg, fs)
     if len(r_peaks) < 3:
         return None
 
@@ -224,6 +520,8 @@ def preprocess_and_save(
     ppg_bandpass: Tuple[float, float] = (0.5, 8.0),
     powerline_freq: float = 50.0,
     files: Tuple[str, str] = ("ppg", "ecg"),
+    use_ppg_peaks: bool = False,
+    ptt_compensation_ms: float = 250.0,
 ):
     """
     Batch preprocess raw PPG/ECG npy files into cycle-segmented format.
@@ -275,7 +573,9 @@ def preprocess_and_save(
             ecg_seg = (ecg_seg - ecg_seg.mean()) / (ecg_seg.std() + 1e-8)
             ppg_seg = (ppg_seg - ppg_seg.mean()) / (ppg_seg.std() + 1e-8)
 
-            result = segment_cycles(ppg_seg, ecg_seg, fs, cycle_len)
+            result = segment_cycles(ppg_seg, ecg_seg, fs, cycle_len,
+                                    use_ppg_peaks=use_ppg_peaks,
+                                    ptt_compensation_ms=ptt_compensation_ms)
             if result is None:
                 continue
 

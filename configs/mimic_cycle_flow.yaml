@@ -10,8 +10,8 @@ trainer:
   accelerator: "gpu"
   devices: 1
   strategy: "auto"
-  precision: "32"              # flow matching stability
-  accumulate_grad_batches: 2   # effective batch = 2 * 8 = 16 windows
+  precision: "16-mixed"
+  accumulate_grad_batches: 1
   gradient_clip_val: 1.0
   deterministic: true
   enable_checkpointing: true
@@ -19,7 +19,7 @@ trainer:
 data:
   target: "scripts.data.mimicbp_v2.MimicBPCycleDataModule"
   params:
-    data_dir: "E:\\datasets\\ppg2ecg\\MIMIC-BP"
+    data_dir: "/root/autodl-tmp/alice/mimicbp"
     train_split: "train_subjects.txt"
     val_split: "val_subjects.txt"
     test_split: "test_subjects.txt"
@@ -35,7 +35,7 @@ data:
     ppg_bandpass: [0.5, 8.0]
     powerline_freq: 50.0
     # loader
-    batch_size: 8
+    batch_size: 64
     num_workers: 4
     pin_memory: true
     drop_last: true
